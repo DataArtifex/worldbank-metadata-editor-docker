@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1
+
+# ==============================================================================
+# World Bank Metadata Editor — FastAPI Companion Service Image
+# Linux (Debian Bookworm) + Python 3.12 + Uvicorn
+# Always builds from the latest official GitHub release (or tag/main) by default.
+# ==============================================================================
+
+FROM python:3.12-slim-bookworm
+
+LABEL org.opencontainers.image.title="World Bank Metadata Editor FastAPI Service" \
+      org.opencontainers.image.description="FastAPI companion service for microdata conversion, summary statistics, and DuckDB indicator timeseries" \
+      org.opencontainers.image.source="https://github.com/worldbank/metadata-editor-fastapi" \
+      org.opencontainers.image.licenses="MIT"
+
+# Build arguments for source resolution and optional extras
+ARG FASTAPI_REPO="worldbank/metadata-editor-fastapi"
+ARG FASTAPI_VERSION="latest"
+ARG INSTALL_REVIEWER="false"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    FASTAPI_ROOT="/var/www/metadata-editor/fastapi" \
+    STORAGE_PATH="/var/www/metadata-editor/editor/datafiles" \
+    HOST="0.0.0.0" \
+    PORT="8000"
+
+# 1. Install system packages and create www-data paths matching the PHP container
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Resolve and download the latest GitHub Release (or tag/branch) of worldbank/metadata-editor-fastapi
+WORKDIR /var/www/metadata-editor
+
+RUN set -eux; \
+    RESOLVED_TAG="${FASTAPI_VERSION}"; \
+    if [ "${RESOLVED_TAG}" = "latest" ]; then \
+        echo "Resolving latest GitHub release for ${FASTAPI_REPO}..."; \
+        RESOLVED_TAG="$(curl -fsSL "https://api.github.com/repos/${FASTAPI_REPO}/releases/latest" | jq -r '.tag_name // empty' || true)"; \
+        if [ -z "${RESOLVED_TAG}" ] || [ "${RESOLVED_TAG}" = "null" ]; then \
+            echo "Checking git tags for ${FASTAPI_REPO}..."; \
+            RESOLVED_TAG="$(git ls-remote --tags --refs --sort='-v:refname' "https://github.com/${FASTAPI_REPO}.git" | head -n1 | awk -F'/' '{print $NF}')"; \
+        fi; \
+        if [ -z "${RESOLVED_TAG}" ]; then \
+            echo "No release tag found; using default branch (main)..."; \
+            RESOLVED_TAG="main"; \
+        fi; \
+    fi; \
+    echo "Downloading ${FASTAPI_REPO} @ ${RESOLVED_TAG}..."; \
+    git clone --depth 1 --branch "${RESOLVED_TAG}" "https://github.com/${FASTAPI_REPO}.git" "${FASTAPI_ROOT}"; \
+    echo "${RESOLVED_TAG}" > "${FASTAPI_ROOT}/RELEASE_VERSION"; \
+    rm -rf "${FASTAPI_ROOT}/.git"
+
+WORKDIR /var/www/metadata-editor/fastapi
+
+# 3. Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && if [ "${INSTALL_REVIEWER}" = "true" ] && [ -f requirements-reviewer.txt ]; then \
+        pip install --no-cache-dir -r requirements-reviewer.txt; \
+    fi
+
+# 4. Prepare shared storage path & entrypoint script
+COPY docker/scripts/entrypoint-fastapi.sh /usr/local/bin/entrypoint-fastapi.sh
+RUN chmod +x /usr/local/bin/entrypoint-fastapi.sh \
+    && mkdir -p /var/www/metadata-editor/editor/datafiles /var/www/metadata-editor/fastapi/logs \
+    && chown -R www-data:www-data /var/www/metadata-editor
+
+USER www-data
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/status >/dev/null || curl -fsS http://127.0.0.1:8000/docs >/dev/null || exit 1
+
+ENTRYPOINT ["/usr/local/bin/entrypoint-fastapi.sh"]
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

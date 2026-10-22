@@ -1,0 +1,23 @@
+# Environment configuration (contains secrets)
+.env
+.env.*
+!.env.example
+
+# Local persistent data mounts (if using bind mounts)
+data/
+volumes/
+backups/
+*.sql
+*.sql.gz
+
+# Custom overrides
+config/auth_oidc.php
+config/reviewer.env
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/

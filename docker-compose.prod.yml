@@ -1,0 +1,96 @@
+# ==============================================================================
+# World Bank Metadata Editor — Production Override (docker-compose.prod.yml)
+# ==============================================================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Key Production Additions:
+#   - Binds persistent volumes to explicit host paths under ${HOST_STORAGE_ROOT:-./data}
+#     for straightforward enterprise storage mounting (EBS, NFS, SAN) and backups.
+#   - Binds Web HTTP port to 127.0.0.1 by default (for a front-end TLS reverse proxy)
+#     or configurable ${PROD_BIND_IP:-0.0.0.0}.
+#   - Adds container resource reservations/limits and log rotation.
+# ==============================================================================
+
+services:
+  db:
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEMORY_LIMIT:-2G}
+
+  fastapi:
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: ${FASTAPI_MEMORY_LIMIT:-4G}
+
+  editor:
+    restart: always
+    ports: !override
+      - "${PROD_BIND_IP:-0.0.0.0}:${APP_PORT:-8080}:80"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: ${EDITOR_CONTAINER_MEMORY_LIMIT:-2G}
+
+  worker:
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_CONTAINER_MEMORY_LIMIT:-2G}
+
+volumes:
+  mysql_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_STORAGE_ROOT:-./data}/mysql
+  editor_datafiles:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_STORAGE_ROOT:-./data}/datafiles
+  editor_files:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_STORAGE_ROOT:-./data}/files
+  editor_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_STORAGE_ROOT:-./data}/logs
+  fastapi_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_STORAGE_ROOT:-./data}/fastapi-logs
