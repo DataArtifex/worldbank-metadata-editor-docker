@@ -108,7 +108,7 @@ COPY docker/config/email.docker.php /var/www/metadata-editor/editor/application/
 COPY docker/config/config-overrides.php /var/www/metadata-editor/editor/application/config/config-overrides.php
 
 RUN echo "" >> /var/www/metadata-editor/editor/application/config/config.php \
-    && echo "require_once __DIR__ . '/config-overrides.php';" >> /var/www/metadata-editor/editor/application/config/config.php
+    && echo "require __DIR__ . '/config-overrides.php';" >> /var/www/metadata-editor/editor/application/config/config.php
 
 # 4. Copy entrypoint and database bootstrap scripts
 COPY docker/scripts/bootstrap-db.php /usr/local/bin/bootstrap-db.php
